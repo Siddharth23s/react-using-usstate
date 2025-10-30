@@ -1,0 +1,52 @@
+import express from "express";
+import jwt from "jsonwebtoken";
+
+const app = express();
+app.use(express.json());
+const SECRET_KEY = "mysecretkey";
+
+const users = [
+  { username: "admin", password: "12345", role: "Admin" },
+  { username: "mod", password: "12345", role: "Moderator" },
+  { username: "user", password: "12345", role: "User" }
+];
+
+app.post("/login", (req, res) => {
+  const { username, password } = req.body;
+  const user = users.find(u => u.username === username && u.password === password);
+  if (!user) return res.status(401).json({ message: "Invalid credentials" });
+  const token = jwt.sign({ username: user.username, role: user.role }, SECRET_KEY, { expiresIn: "1h" });
+  res.json({ token });
+});
+
+function verifyToken(req, res, next) {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+  if (!token) return res.status(403).json({ message: "Token required" });
+  jwt.verify(token, SECRET_KEY, (err, user) => {
+    if (err) return res.status(403).json({ message: "Invalid token" });
+    req.user = user;
+    next();
+  });
+}
+
+function authorizeRoles(...roles) {
+  return (req, res, next) => {
+    if (!roles.includes(req.user.role)) return res.status(403).json({ message: "Access denied" });
+    next();
+  };
+}
+
+app.get("/admin", verifyToken, authorizeRoles("Admin"), (req, res) => {
+  res.json({ message: `Welcome Admin ${req.user.username}` });
+});
+
+app.get("/moderator", verifyToken, authorizeRoles("Moderator", "Admin"), (req, res) => {
+  res.json({ message: `Moderator Access: ${req.user.username}` });
+});
+
+app.get("/user", verifyToken, authorizeRoles("User", "Moderator", "Admin"), (req, res) => {
+  res.json({ message: `User Profile: ${req.user.username}` });
+});
+
+app.listen(5000, () => console.log("Server running on port 5000"));
